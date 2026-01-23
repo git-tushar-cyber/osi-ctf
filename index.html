@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stranger Things: The OSI Escape</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        body {
+            background-color: #050505;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Press Start 2P', monospace;
+        }
+        
+        #game-wrapper {
+            position: relative;
+            width: 800px;
+            height: 600px;
+            box-shadow: 0 0 50px rgba(200, 0, 0, 0.4);
+            border: 10px solid #333;
+            border-radius: 10px;
+            background-color: #000;
+        }
+
+        canvas {
+            display: block;
+            background: linear-gradient(to bottom, #1a0505, #000000);
+            width: 100%;
+            height: 100%;
+        }
+
+        /* UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            pointer-events: none;
+            z-index: 10;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #level-title { 
+            font-size: 24px; 
+            color: #ff3333; 
+            margin-bottom: 15px; 
+            text-shadow: 2px 2px 0px #000;
+        }
+        #level-clue { 
+            font-size: 14px; /* Slightly larger text */
+            color: #ffffff; 
+            background: rgba(0, 0, 0, 0.85); /* Darker background for readability */
+            border: 1px solid #ff3333; /* Red border to pop */
+            display: inline-block;
+            padding: 15px;
+            border-radius: 5px;
+            max-width: 700px; /* Wider box */
+            line-height: 1.6;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+        }
+        
+        /* Win Screen */
+        #win-screen {
+            display: none;
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 20;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .flag-box {
+            margin-top: 20px;
+            padding: 20px;
+            border: 2px dashed #00ff00;
+            color: #00ff00;
+            font-size: 16px;
+            user-select: text; 
+            cursor: text;
+            background: #002200;
+        }
+
+        /* Scanlines */
+        .scanlines {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+            z-index: 5;
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-wrapper">
+    <div class="scanlines"></div>
+    
+    <div id="ui-layer">
+        <div id="level-title">LEVEL 1</div>
+        <div id="level-clue">Loading...</div>
+    </div>
+
+    <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+    <div id="win-screen">
+        <h1 style="color: #00ff00; margin-bottom: 20px;">YOU ESCAPED!</h1>
+        <p style="font-size: 12px; color: #aaa; margin-bottom: 10px;">The gate has been sealed.</p>
+        <div class="flag-box">STCTF{DUNC30N_M4ST3R_0F_0S1}</div>
+        <p style="margin-top: 20px; font-size: 10px; color: #555;">(Select text to copy)</p>
+        <button onclick="location.reload()" style="margin-top: 30px; padding: 10px; cursor: pointer; font-family: inherit; background: #333; color: #fff; border: 1px solid #fff;">PLAY AGAIN</button>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const uiTitle = document.getElementById('level-title');
+    const uiClue = document.getElementById('level-clue');
+    const winScreen = document.getElementById('win-screen');
+
+    // --- GAME STATE ---
+    let currentLevel = 0;
+    let player = { x: 400, y: 520, w: 30, h: 30, color: '#33ff33', speed: 5 };
+    let gameActive = true;
+    let doors = [];
+    let particles = []; 
+
+    // --- CONFIGURATION ---
+    const levels = [
+        { 
+            name: "HARDWARE", 
+            question: "We need to start at the bottom. Identify the layer responsible for physical cables, raw bit streams, and voltage.", 
+            correct: "Physical", 
+            decoys: ["Network", "Session"] 
+        },
+        { 
+            name: "FRAMES", 
+            question: "The connection is live. Now we need to handle MAC addressing and package the bits into Frames.", 
+            correct: "Data Link", 
+            decoys: ["Transport", "Physical"] 
+        },
+        { 
+            name: "ROUTING", 
+            question: "We need to leave the local network. Which layer handles IP addresses, Routers, and Path Determination?", 
+            correct: "Network", 
+            decoys: ["Presentation", "Data Link"] 
+        },
+        { 
+            name: "TRANSPORT", 
+            question: "Data is arriving but it's messy. Which layer handles TCP/UDP, Segmentation, and Error Recovery?", 
+            correct: "Transport", 
+            decoys: ["Session", "Application"] 
+        },
+        { 
+            name: "SESSION", 
+            question: "We need to establish, manage, and terminate the connection between the local and remote computers.", 
+            correct: "Session", 
+            decoys: ["Network", "Physical"] 
+        },
+        { 
+            name: "TRANSLATION", 
+            question: "The data is raw. Which layer translates, encrypts (SSL/TLS), and compresses the data for the application?", 
+            correct: "Presentation", 
+            decoys: ["Transport", "Data Link"] 
+        },
+        { 
+            name: "INTERFACE", 
+            question: "Final step. Which layer provides the interface for the user to interact with the network (HTTP, FTP, Email)?", 
+            correct: "Application", 
+            decoys: ["Session", "Network"] 
+        }
+    ];
+
+    // --- INITIALIZATION ---
+    function initLevel() {
+        if (currentLevel >= levels.length) {
+            triggerWin();
+            return;
+        }
+
+        // Reset Player Position
+        player.x = 385;
+        player.y = 520;
+        doors = [];
+        
+        // Update UI Text
+        uiTitle.innerText = `LEVEL ${currentLevel + 1}: ${levels[currentLevel].name}`;
+        uiClue.innerText = levels[currentLevel].question;
+
+        // Create 3 Doors
+        const doorLabels = shuffle([levels[currentLevel].correct, ...levels[currentLevel].decoys]);
+        const positions = [150, 385, 620];
+
+        // FIX: Moved 'y' from 120 to 240 to clear the text!
+        for (let i = 0; i < 3; i++) {
+            doors.push({
+                x: positions[i],
+                y: 240, 
+                w: 60,
+                h: 90,
+                label: doorLabels[i],
+                isCorrect: doorLabels[i] === levels[currentLevel].correct
+            });
+        }
+    }
+
+    // --- INPUT HANDLING ---
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.key] = true);
+    window.addEventListener('keyup', e => keys[e.key] = false);
+
+    // --- GAME LOGIC ---
+    function update() {
+        if (!gameActive) return;
+
+        // Player Movement
+        if (keys['ArrowLeft'] || keys['a']) player.x -= player.speed;
+        if (keys['ArrowRight'] || keys['d']) player.x += player.speed;
+        if (keys['ArrowUp'] || keys['w']) player.y -= player.speed;
+        if (keys['ArrowDown'] || keys['s']) player.y += player.speed;
+
+        // Wall Collision
+        if (player.x < 0) player.x = 0;
+        if (player.x > canvas.width - player.w) player.x = canvas.width - player.w;
+        if (player.y < 0) player.y = 0;
+        if (player.y > canvas.height - player.w) player.y = canvas.height - player.w;
+
+        // Door Collision
+        doors.forEach(door => {
+            if (rectIntersect(player, door)) {
+                if (door.isCorrect) {
+                    currentLevel++;
+                    initLevel();
+                } else {
+                    player.y = 520; // Reset player
+                    // Shake effect on text
+                    uiClue.style.color = "#ff0000";
+                    uiClue.style.borderColor = "#ff0000";
+                    uiClue.innerText = "WRONG PORTAL! The Mind Flayer is close...";
+                    setTimeout(() => {
+                        uiClue.style.color = "#ffffff";
+                        uiClue.style.borderColor = "#ff3333";
+                        uiClue.innerText = levels[currentLevel].question;
+                    }, 1500);
+                }
+            }
+        });
+
+        // Spore Particles
+        if (Math.random() < 0.2) particles.push({x: Math.random()*canvas.width, y: 0, s: Math.random()*2});
+        particles.forEach(p => p.y += 0.5);
+        particles = particles.filter(p => p.y < canvas.height);
+    }
+
+    // --- RENDERING ---
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw Floor Grid
+        ctx.strokeStyle = '#330000';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i=0; i<canvas.width; i+=40) { ctx.moveTo(i, 0); ctx.lineTo(i, canvas.height); }
+        for (let i=0; i<canvas.height; i+=40) { ctx.moveTo(0, i); ctx.lineTo(canvas.width, i); }
+        ctx.stroke();
+
+        // Draw Doors
+        doors.forEach(door => {
+            // Door Frame
+            ctx.fillStyle = '#444';
+            ctx.fillRect(door.x - 5, door.y - 5, door.w + 10, door.h + 5);
+            // Door Void
+            ctx.fillStyle = '#000';
+            ctx.fillRect(door.x, door.y, door.w, door.h);
+            
+            // Text Label Box (Fixed visibility)
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+            ctx.fillRect(door.x - 25, door.y - 35, door.w + 50, 25);
+            ctx.strokeStyle = '#555';
+            ctx.strokeRect(door.x - 25, door.y - 35, door.w + 50, 25);
+
+            // Text Label
+            ctx.fillStyle = '#fff';
+            ctx.font = '10px "Press Start 2P"';
+            ctx.textAlign = 'center';
+            ctx.fillText(door.label, door.x + door.w/2, door.y - 18);
+        });
+
+        // Draw Player
+        ctx.fillStyle = player.color;
+        ctx.fillRect(player.x, player.y, player.w, player.h);
+        ctx.fillStyle = '#fff'; 
+        ctx.fillRect(player.x, player.y, player.w, 8);
+
+        // Draw Spores
+        ctx.fillStyle = 'rgba(200, 200, 255, 0.4)';
+        particles.forEach(p => ctx.fillRect(p.x, p.y, 2, 2));
+
+        if (gameActive) requestAnimationFrame(loop);
+    }
+
+    function loop() {
+        update();
+        draw();
+    }
+
+    function triggerWin() {
+        gameActive = false;
+        winScreen.style.display = "flex";
+    }
+
+    function rectIntersect(r1, r2) {
+        return !(r2.x > r1.x + r1.w || r2.x + r2.w < r1.x || r2.y > r1.y + r1.h || r2.y + r2.h < r1.y);
+    }
+
+    function shuffle(array) {
+        return array.sort(() => Math.random() - 0.5);
+    }
+
+    // Start
+    initLevel();
+    loop();
+
+</script>
+</body>
+</html>
